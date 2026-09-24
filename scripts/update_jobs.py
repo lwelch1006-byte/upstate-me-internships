@@ -96,18 +96,72 @@ def strip_html(value):
     return re.sub(r"\s+", " ", value).strip()
 
 def relevant(title, desc=""):
-    text = (title + " " + desc).lower()
+    """
+    Keep internships that are a realistic fit for a mechanical-engineering student.
+    The title is weighted much more heavily than the description so unrelated jobs
+    do not get admitted just because an employer page mentions "engineering".
+    """
+    title_l = strip_html(title).lower()
+    desc_l = strip_html(desc).lower()
+    text = title_l + " " + desc_l
+
     internship = any(x in text for x in [
         "intern","internship","co-op","coop","co op","student engineer",
         "engineering student","summer engineering","spring engineering"
     ])
-    engineering = any(x in text for x in [
-        "mechanical","manufacturing","process","quality","design","product","test",
-        "validation","reliability","engineering","automation","controls","project",
-        "thermal","hvac","mechatronic","industrial engineer","maintenance engineer",
-        "packaging engineer","technical planning","facilities engineer","r&d"
+    if not internship:
+        return False
+
+    # Reject clearly non-ME functions even when their descriptions contain
+    # generic engineering/company language.
+    excluded_title_terms = [
+        "marketing","communications","public relations","social media","sales intern",
+        "business intern","finance","accounting","human resources","hr intern",
+        "recruiting","talent acquisition","first aid","nursing","medical","pharmacy",
+        "environmental health","health & safety","health and safety","ehs intern",
+        "hse intern","safety intern","information technology","it intern",
+        "cybersecurity","software intern","software engineering","computer science",
+        "data science","data analyst","legal intern","law intern","procurement intern"
+    ]
+    if any(term in title_l for term in excluded_title_terms):
+        return False
+
+    # Strong ME / ME-adjacent signals in the title. These are the roles a
+    # mechanical-engineering student would reasonably target.
+    allowed_title_terms = [
+        "mechanical","manufacturing engineer","manufacturing engineering",
+        "process engineer","process engineering","quality engineer","quality engineering",
+        "design engineer","design engineering","product engineer","product engineering",
+        "test engineer","test engineering","validation engineer","validation engineering",
+        "reliability engineer","reliability engineering","sustaining engineer",
+        "automation engineer","automation engineering","controls engineer","controls engineering",
+        "mechatronic","thermal engineer","thermal engineering","hvac",
+        "maintenance engineer","maintenance engineering","tooling engineer",
+        "tooling engineering","industrial engineer","industrial engineering",
+        "packaging engineer","packaging engineering","technical planning",
+        "facilities engineer","facilities engineering","r&d engineer","research engineer"
+    ]
+    if any(term in title_l for term in allowed_title_terms):
+        return True
+
+    # Generic titles such as "Engineering Intern" or "Project Engineering Intern"
+    # only qualify when the description contains a strong mechanical signal.
+    generic_engineering_title = any(term in title_l for term in [
+        "engineering intern","engineer intern","engineering co-op","engineering coop",
+        "project engineering","project engineer","quality intern","process intern",
+        "product intern","design intern","test intern","reliability intern"
     ])
-    return internship and engineering
+    mechanical_desc_signals = [
+        "mechanical engineering","mechanical design","manufacturing engineering",
+        "manufacturing process","cad","solidworks","creo","catia","autocad",
+        "gd&t","geometric dimensioning","tooling","fixture","machining","cnc",
+        "thermodynamics","heat transfer","fluid mechanics","thermal","hvac",
+        "piping","rotating equipment","equipment design","product design",
+        "prototype","prototyping","test engineering","validation testing",
+        "reliability engineering","root cause","continuous improvement",
+        "lean manufacturing","automation","robotics","plc","mechatronics"
+    ]
+    return generic_engineering_title and any(term in desc_l for term in mechanical_desc_signals)
 
 def is_upstate(text):
     t = (text or "").lower()
@@ -353,7 +407,7 @@ def main():
         company = (raw.get("company") or "Unknown employer").strip()
         title = strip_html(raw.get("title") or "")
         location = (raw.get("location") or "Upstate SC").strip()
-        if not title:
+        if not title or not relevant(title, raw.get("description", "")):
             return
         key = dedupe_key(company, title, location)
         old = old_by_key.get(key, {})
@@ -385,11 +439,17 @@ def main():
     for raw in direct:
         add(raw)
 
-    # Broad discovery. One page for "intern" and one for "co-op" keeps the free
-    # Adzuna default quota comfortably below its daily limit at 30-minute checks.
+    # Broad discovery uses mechanical/engineering-specific searches instead of
+    # generic "intern" searches. Four calls every 30 minutes = 192 calls/day,
+    # leaving headroom under Adzuna's common free-tier daily allowance.
     broad_available = bool(APP_ID and APP_KEY)
     if broad_available:
-        for query in ("intern", "co-op"):
+        for query in (
+            "mechanical engineering intern",
+            "manufacturing engineering intern",
+            "process engineering intern",
+            "engineering co-op"
+        ):
             try:
                 for item in adzuna_search(query):
                     add(convert_adzuna(item))
@@ -402,6 +462,10 @@ def main():
     # listing temporarily. Without a broad API configured, never delete the seed set.
     for key, old in old_by_key.items():
         if key in collected:
+            continue
+        # Purge previously embedded listings that no longer pass the stricter
+        # mechanical-engineering filter. Do not preserve unrelated internships.
+        if not relevant(old.get("title", ""), old.get("summary", "")):
             continue
         if not broad_available:
             keep = True
