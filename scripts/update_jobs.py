@@ -95,70 +95,60 @@ def strip_html(value):
     value = html.unescape(re.sub(r"<[^>]+>", " ", value or ""))
     return re.sub(r"\s+", " ", value).strip()
 
-def relevant(title, desc=""):
-    """
-    User rule:
-      1) the job title must be an Engineer/Engineering Intern-style role, and
-      2) it must be a role that accepts Mechanical Engineering students.
+ME_PROGRAM_EMPLOYERS = [
+    "air compressor services","acs","ge vernova","michelin","bmw","jacobs","garver",
+    "illinois tool works","itw","hartness","milliken","opmobility","op mobility",
+    "vertiv","hubbell","goodwyn mills cawood","zf","bosch","magna","jtekt","afl",
+    "duke energy","eaton","borgwarner","timken","arthrex","syensqo"
+]
 
-    Discipline-specific engineering-intern titles that are standard ME paths
-    qualify directly. Generic Engineering Intern titles require a Mechanical
-    Engineering signal in the posting text.
+def relevant(title, desc="", company=""):
+    """
+    Keep engineering-internship titles that are plausible for a Mechanical
+    Engineering student. Broad Engineering Internship titles are allowed for
+    employers known to recruit Mechanical Engineering students.
     """
     title_l = strip_html(title).lower()
     desc_l = strip_html(desc).lower()
+    company_l = strip_html(company).lower()
 
-    # Title must clearly be an engineering internship. This blocks marketing,
-    # first aid, HR, business, nursing, etc. before description keywords matter.
-    engineer_intern_title = (
-        re.search(r"\bengineer(?:ing)?\s+(?:student\s+)?intern(?:ship)?\b", title_l)
-        or re.search(r"\bintern(?:ship)?\s*[-–—:]?\s*(?:in\s+)?(?:mechanical\s+)?engineer(?:ing)?\b", title_l)
-        or re.search(r"\b(?:mechanical|manufacturing|process|quality|design|product|test|validation|reliability|thermal|automation|controls|industrial|project|packaging|sustaining|facilities)\s+engineering\s+intern(?:ship)?\b", title_l)
-    )
-    if not engineer_intern_title:
+    # Must actually be an engineering internship/co-op title.
+    has_engineering = "engineer" in title_l or "engineering" in title_l
+    has_intern = "intern" in title_l or "internship" in title_l or "co-op" in title_l or "coop" in title_l
+    if not (has_engineering and has_intern):
         return False
 
-    # Obviously mechanical titles are always acceptable.
-    if "mechanical" in title_l:
+    # Exclude clearly different engineering disciplines unless the title also
+    # explicitly includes Mechanical.
+    non_me_title_terms = [
+        "software","computer","cyber","data","civil","structural","chemical",
+        "environmental","biomedical","electrical engineering","electronics",
+        "firmware","network","it infrastructure"
+    ]
+    if "mechanical" not in title_l and any(term in title_l for term in non_me_title_terms):
+        return False
+
+    # Strong mechanical / ME-adjacent role titles qualify directly.
+    me_title_terms = [
+        "mechanical","manufacturing","process","quality","design","product",
+        "test","validation","reliability","thermal","automation","controls",
+        "industrial","project","packaging","sustaining","facilities","tooling",
+        "maintenance","r&d","research"
+    ]
+    if any(term in title_l for term in me_title_terms):
         return True
 
-    # These engineering internship disciplines commonly accept Mechanical
-    # Engineering majors and are intentionally included.
-    me_friendly_title_terms = [
-        "manufacturing engineering intern",
-        "process engineering intern",
-        "quality engineering intern",
-        "design engineering intern",
-        "product engineering intern",
-        "test engineering intern",
-        "validation engineering intern",
-        "reliability engineering intern",
-        "thermal engineering intern",
-        "automation engineering intern",
-        "controls engineering intern",
-        "industrial engineering intern",
-        "project engineering intern",
-        "packaging engineering intern",
-        "sustaining engineering intern",
-        "facilities engineering intern"
+    # Generic Engineering Intern/Internship titles qualify when either the
+    # posting explicitly mentions Mechanical Engineering or the employer is a
+    # known ME-recruiting engineering employer in the Upstate.
+    mechanical_signals = [
+        "mechanical engineering","mechanical engineer","degree in mechanical",
+        "major in mechanical","studying mechanical","mechanical/electrical",
+        "mechanical & electrical","mechanical or electrical"
     ]
-    if any(term in title_l for term in me_friendly_title_terms):
+    if any(term in desc_l for term in mechanical_signals):
         return True
-
-    # For a generic "Engineering Intern" title, confirm the posting explicitly
-    # accepts Mechanical Engineering / Mechanical Engineer backgrounds.
-    mechanical_acceptance_signals = [
-        "mechanical engineering",
-        "mechanical engineer",
-        "mechanical or",
-        "mechanical,",
-        "mechanical/electrical",
-        "mechanical & electrical",
-        "degree in mechanical",
-        "major in mechanical",
-        "studying mechanical"
-    ]
-    return any(term in desc_l for term in mechanical_acceptance_signals)
+    return any(name in company_l for name in ME_PROGRAM_EMPLOYERS)
 
 def is_upstate(text):
     t = (text or "").lower()
@@ -318,7 +308,7 @@ def scan_greenhouse(company, token):
         loc = ((item.get("location") or {}).get("name") or "")
         desc = strip_html(item.get("content", ""))
         combined = " ".join([title, loc, desc])
-        if relevant(title, desc) and is_upstate(combined):
+        if relevant(title, desc, company) and is_upstate(combined):
             jobs.append({
                 "company": company, "title": title, "location": infer_location(combined),
                 "description": desc, "url": item.get("absolute_url") or "",
@@ -341,7 +331,7 @@ def scan_lever(company, site):
         loc = cats.get("location") or " ".join(cats.get("allLocations") or [])
         desc = strip_html(item.get("descriptionPlain") or item.get("description") or "")
         combined = " ".join([title, loc, desc])
-        if relevant(title, desc) and is_upstate(combined):
+        if relevant(title, desc, company) and is_upstate(combined):
             jobs.append({
                 "company": company, "title": title, "location": infer_location(combined),
                 "description": desc, "url": item.get("hostedUrl") or item.get("applyUrl") or "",
@@ -360,7 +350,7 @@ def scan_visible_links(company, base_url, page_html):
         start, end = max(0, m.start() - 400), min(len(page_html), m.end() + 400)
         context = strip_html(page_html[start:end])
         combined = title + " " + context + " " + href
-        if not relevant(title, context) or not is_upstate(combined):
+        if not relevant(title, context, company) or not is_upstate(combined):
             continue
         full_url = urljoin(base_url, href)
         if not full_url.startswith("http"):
@@ -405,7 +395,7 @@ def convert_adzuna(item):
     desc = strip_html(item.get("description") or "")
     company = ((item.get("company") or {}).get("display_name") or "Unknown employer").strip()
     location = ((item.get("location") or {}).get("display_name") or "Upstate SC").strip()
-    if not relevant(title, desc):
+    if not relevant(title, desc, company):
         return None
     salary = ""
     if item.get("salary_min") and item.get("salary_max"):
@@ -429,7 +419,7 @@ def main():
         company = (raw.get("company") or "Unknown employer").strip()
         title = strip_html(raw.get("title") or "")
         location = (raw.get("location") or "Upstate SC").strip()
-        if not title or not relevant(title, raw.get("description", "")):
+        if not title or not relevant(title, raw.get("description", ""), company):
             return
         if not is_summer_2027(title, raw.get("description", "")):
             return
@@ -488,7 +478,7 @@ def main():
             continue
         # Purge previously embedded listings that no longer pass the stricter
         # mechanical-engineering and Summer 2027 filters.
-        if not relevant(old.get("title", ""), old.get("summary", "")):
+        if not relevant(old.get("title", ""), old.get("summary", ""), old.get("company", "")):
             continue
         if not is_summer_2027(old.get("title", ""), old.get("summary", "") + " " + old.get("term", "")):
             continue
