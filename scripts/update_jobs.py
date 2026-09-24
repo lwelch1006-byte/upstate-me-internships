@@ -169,6 +169,31 @@ def is_upstate(text):
         "sc" in t or "south carolina" in t or any(place in t for place in UPSTATE_PLACES)
     )
 
+def is_summer_2027(title, desc=""):
+    """
+    Only allow roles clearly tied to Summer 2027.
+    Reject Spring/Fall terms and ambiguous postings with no explicit Summer 2027 signal.
+    """
+    text = (strip_html(title) + " " + strip_html(desc)).lower()
+
+    # Explicit non-summer 2027 terms are always rejected.
+    if re.search(r"\b(spring|fall|autumn)\s*(?:20)?27\b", text):
+        return False
+    if re.search(r"\b(?:20)?27\s*(spring|fall|autumn)\b", text):
+        return False
+
+    summer_patterns = [
+        r"\bsummer\s*2027\b",
+        r"\b2027\s*summer\b",
+        r"\bsummer\s*['’]?27\b",
+        r"\b['’]?27\s*summer\b",
+        r"\bsummer\s+intern(?:ship)?[^.]{0,40}\b2027\b",
+        r"\b2027\b[^.]{0,40}\bsummer\s+intern(?:ship)?\b",
+        r"\bmay\s*(?:-|–|to|through)\s*(?:august|aug)\s*2027\b",
+        r"\bmay\s*2027\b[^.]{0,50}\b(?:august|aug)\s*2027\b"
+    ]
+    return any(re.search(p, text) for p in summer_patterns)
+
 def infer_location(text):
     t = (text or "").lower()
     for place in UPSTATE_PLACES:
@@ -409,6 +434,8 @@ def main():
         location = (raw.get("location") or "Upstate SC").strip()
         if not title or not relevant(title, raw.get("description", "")):
             return
+        if not is_summer_2027(title, raw.get("description", "")):
+            return
         key = dedupe_key(company, title, location)
         old = old_by_key.get(key, {})
         created = parse_iso(raw.get("created"))
@@ -445,10 +472,10 @@ def main():
     broad_available = bool(APP_ID and APP_KEY)
     if broad_available:
         for query in (
-            "mechanical engineering intern",
-            "manufacturing engineering intern",
-            "process engineering intern",
-            "engineering co-op"
+            "Summer 2027 mechanical engineering intern",
+            "Summer 2027 manufacturing engineering intern",
+            "Summer 2027 process engineering intern",
+            "Summer 2027 engineering co-op"
         ):
             try:
                 for item in adzuna_search(query):
@@ -464,8 +491,10 @@ def main():
         if key in collected:
             continue
         # Purge previously embedded listings that no longer pass the stricter
-        # mechanical-engineering filter. Do not preserve unrelated internships.
+        # mechanical-engineering and Summer 2027 filters.
         if not relevant(old.get("title", ""), old.get("summary", "")):
+            continue
+        if not is_summer_2027(old.get("title", ""), old.get("summary", "") + " " + old.get("term", "")):
             continue
         if not broad_available:
             keep = True
