@@ -4,6 +4,7 @@ import html
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlencode, urljoin
@@ -295,20 +296,32 @@ def scan_visible_links(company, base_url, page_html):
         })
     return jobs
 
-def scan_employers(companies_payload):
+def scan_one_employer(company, url):
     found = []
-    for company, url in direct_sources(companies_payload).items():
-        try:
-            page = fetch_text(url, timeout=12)
-        except Exception as e:
-            print("career page warning", company, e)
-            continue
-        gh_tokens, lever_sites = discover_ats(page)
-        for token in gh_tokens:
-            found.extend(scan_greenhouse(company, token))
-        for site in lever_sites:
-            found.extend(scan_lever(company, site))
-        found.extend(scan_visible_links(company, url, page))
+    try:
+        page = fetch_text(url, timeout=10)
+    except Exception as e:
+        print("career page warning", company, e)
+        return found
+    gh_tokens, lever_sites = discover_ats(page)
+    for token in gh_tokens:
+        found.extend(scan_greenhouse(company, token))
+    for site in lever_sites:
+        found.extend(scan_lever(company, site))
+    found.extend(scan_visible_links(company, url, page))
+    return found
+
+def scan_employers(companies_payload):
+    sources = list(direct_sources(companies_payload).items())
+    found = []
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(scan_one_employer, company, url): company for company, url in sources}
+        for future in as_completed(futures):
+            company = futures[future]
+            try:
+                found.extend(future.result())
+            except Exception as e:
+                print("employer scan warning", company, e)
     return found
 
 def convert_adzuna(item):
