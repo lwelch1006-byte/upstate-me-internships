@@ -97,71 +97,68 @@ def strip_html(value):
 
 def relevant(title, desc=""):
     """
-    Keep internships that are a realistic fit for a mechanical-engineering student.
-    The title is weighted much more heavily than the description so unrelated jobs
-    do not get admitted just because an employer page mentions "engineering".
+    User rule:
+      1) the job title must be an Engineer/Engineering Intern-style role, and
+      2) it must be a role that accepts Mechanical Engineering students.
+
+    Discipline-specific engineering-intern titles that are standard ME paths
+    qualify directly. Generic Engineering Intern titles require a Mechanical
+    Engineering signal in the posting text.
     """
     title_l = strip_html(title).lower()
     desc_l = strip_html(desc).lower()
-    text = title_l + " " + desc_l
 
-    internship = any(x in text for x in [
-        "intern","internship","co-op","coop","co op","student engineer",
-        "engineering student","summer engineering","spring engineering"
-    ])
-    if not internship:
+    # Title must clearly be an engineering internship. This blocks marketing,
+    # first aid, HR, business, nursing, etc. before description keywords matter.
+    engineer_intern_title = (
+        re.search(r"\bengineer(?:ing)?\s+(?:student\s+)?intern(?:ship)?\b", title_l)
+        or re.search(r"\bintern(?:ship)?\s*[-–—:]?\s*(?:in\s+)?(?:mechanical\s+)?engineer(?:ing)?\b", title_l)
+        or re.search(r"\b(?:mechanical|manufacturing|process|quality|design|product|test|validation|reliability|thermal|automation|controls|industrial|project|packaging|sustaining|facilities)\s+engineering\s+intern(?:ship)?\b", title_l)
+    )
+    if not engineer_intern_title:
         return False
 
-    # Reject clearly non-ME functions even when their descriptions contain
-    # generic engineering/company language.
-    excluded_title_terms = [
-        "marketing","communications","public relations","social media","sales intern",
-        "business intern","finance","accounting","human resources","hr intern",
-        "recruiting","talent acquisition","first aid","nursing","medical","pharmacy",
-        "environmental health","health & safety","health and safety","ehs intern",
-        "hse intern","safety intern","information technology","it intern",
-        "cybersecurity","software intern","software engineering","computer science",
-        "data science","data analyst","legal intern","law intern","procurement intern"
-    ]
-    if any(term in title_l for term in excluded_title_terms):
-        return False
-
-    # Strong ME / ME-adjacent signals in the title. These are the roles a
-    # mechanical-engineering student would reasonably target.
-    allowed_title_terms = [
-        "mechanical","manufacturing engineer","manufacturing engineering",
-        "process engineer","process engineering","quality engineer","quality engineering",
-        "design engineer","design engineering","product engineer","product engineering",
-        "test engineer","test engineering","validation engineer","validation engineering",
-        "reliability engineer","reliability engineering","sustaining engineer",
-        "automation engineer","automation engineering","controls engineer","controls engineering",
-        "mechatronic","thermal engineer","thermal engineering","hvac",
-        "maintenance engineer","maintenance engineering","tooling engineer",
-        "tooling engineering","industrial engineer","industrial engineering",
-        "packaging engineer","packaging engineering","technical planning",
-        "facilities engineer","facilities engineering","r&d engineer","research engineer"
-    ]
-    if any(term in title_l for term in allowed_title_terms):
+    # Obviously mechanical titles are always acceptable.
+    if "mechanical" in title_l:
         return True
 
-    # Generic titles such as "Engineering Intern" or "Project Engineering Intern"
-    # only qualify when the description contains a strong mechanical signal.
-    generic_engineering_title = any(term in title_l for term in [
-        "engineering intern","engineer intern","engineering co-op","engineering coop",
-        "project engineering","project engineer","quality intern","process intern",
-        "product intern","design intern","test intern","reliability intern"
-    ])
-    mechanical_desc_signals = [
-        "mechanical engineering","mechanical design","manufacturing engineering",
-        "manufacturing process","cad","solidworks","creo","catia","autocad",
-        "gd&t","geometric dimensioning","tooling","fixture","machining","cnc",
-        "thermodynamics","heat transfer","fluid mechanics","thermal","hvac",
-        "piping","rotating equipment","equipment design","product design",
-        "prototype","prototyping","test engineering","validation testing",
-        "reliability engineering","root cause","continuous improvement",
-        "lean manufacturing","automation","robotics","plc","mechatronics"
+    # These engineering internship disciplines commonly accept Mechanical
+    # Engineering majors and are intentionally included.
+    me_friendly_title_terms = [
+        "manufacturing engineering intern",
+        "process engineering intern",
+        "quality engineering intern",
+        "design engineering intern",
+        "product engineering intern",
+        "test engineering intern",
+        "validation engineering intern",
+        "reliability engineering intern",
+        "thermal engineering intern",
+        "automation engineering intern",
+        "controls engineering intern",
+        "industrial engineering intern",
+        "project engineering intern",
+        "packaging engineering intern",
+        "sustaining engineering intern",
+        "facilities engineering intern"
     ]
-    return generic_engineering_title and any(term in desc_l for term in mechanical_desc_signals)
+    if any(term in title_l for term in me_friendly_title_terms):
+        return True
+
+    # For a generic "Engineering Intern" title, confirm the posting explicitly
+    # accepts Mechanical Engineering / Mechanical Engineer backgrounds.
+    mechanical_acceptance_signals = [
+        "mechanical engineering",
+        "mechanical engineer",
+        "mechanical or",
+        "mechanical,",
+        "mechanical/electrical",
+        "mechanical & electrical",
+        "degree in mechanical",
+        "major in mechanical",
+        "studying mechanical"
+    ]
+    return any(term in desc_l for term in mechanical_acceptance_signals)
 
 def is_upstate(text):
     t = (text or "").lower()
@@ -466,16 +463,15 @@ def main():
     for raw in direct:
         add(raw)
 
-    # Broad discovery uses mechanical/engineering-specific searches instead of
-    # generic "intern" searches. Four calls every 30 minutes = 192 calls/day,
-    # leaving headroom under Adzuna's common free-tier daily allowance.
+    # Broad discovery focuses on Engineer/Engineering Intern titles. Four calls
+    # every 30 minutes = 192 calls/day, leaving headroom under the API quota.
     broad_available = bool(APP_ID and APP_KEY)
     if broad_available:
         for query in (
+            "Summer 2027 engineering intern",
+            "Summer 2027 engineer intern",
             "Summer 2027 mechanical engineering intern",
-            "Summer 2027 manufacturing engineering intern",
-            "Summer 2027 process engineering intern",
-            "Summer 2027 engineering co-op"
+            "Summer 2027 manufacturing engineering intern"
         ):
             try:
                 for item in adzuna_search(query):
