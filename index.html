@@ -28,6 +28,10 @@ footer{background:#0c2233;color:#aebfcb;border-top:1px solid rgba(255,255,255,.0
 @media(max-width:1020px){.hero-grid{grid-template-columns:1fr}.filters{grid-template-columns:repeat(2,1fr)}.jobs-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.company-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.tracker-wrap{grid-template-columns:1fr}.about-grid{grid-template-columns:1fr;gap:30px}}
 @media(max-width:700px){.shell{width:min(100% - 24px,1240px)}.nav-links{display:none}.hero{padding:54px 0 38px}.hero h1{font-size:2.65rem}.metric-row{grid-template-columns:1fr 1fr}.section{padding:50px 0}.section-heading{align-items:flex-start;flex-direction:column}.filters,.jobs-grid,.company-grid,.company-intro,.tracker-summary{grid-template-columns:1fr}.job-card{min-height:0}.about-section h2{font-size:2rem}.footer-wrap{align-items:flex-start;flex-direction:column;justify-content:center;padding:18px 0}}
 
+
+.auth-area{display:flex;align-items:center;gap:8px;margin-left:auto}.auth-button{height:38px;border:1px solid var(--line2);background:#fff;color:var(--ink);border-radius:10px;padding:0 12px;font-size:.78rem;font-weight:820;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 6px rgba(18,41,61,.04)}.auth-button:hover{border-color:#aeb9c3}.google-dot{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:#fff;border:1px solid var(--line);font-size:.67rem;font-weight:900;color:#4285f4}.user-chip{display:flex;align-items:center;gap:8px}.user-avatar{width:31px;height:31px;border-radius:50%;object-fit:cover;border:1px solid var(--line2);background:#eef3f7}.user-name{max-width:115px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.76rem;font-weight:820;color:#455462}.signout-button{border:0;background:transparent;color:#6a7681;font-size:.72rem;font-weight:800;cursor:pointer;padding:6px}.signout-button:hover{color:var(--ink)}.sync-note{margin-top:12px;font-size:.74rem;color:#bfd0dc}.sync-note strong{color:#fff}.sync-badge{display:inline-flex;align-items:center;gap:6px;margin-top:9px;padding:6px 9px;border-radius:999px;background:rgba(255,255,255,.1);font-size:.7rem;font-weight:800}.sync-dot{width:7px;height:7px;border-radius:50%;background:#6fe0b4}
+@media(max-width:860px){.nav-links{display:none}.user-name{display:none}.auth-button{padding:0 9px}.auth-button .auth-label{display:none}}
+
 </style>
 </head>
 <body>
@@ -35,6 +39,10 @@ footer{background:#0c2233;color:#aebfcb;border-top:1px solid rgba(255,255,255,.0
   <div class="shell nav-wrap">
     <a class="brand" href="#top"><span class="brand-mark">ME</span><span>Upstate Internships<small>Mechanical engineering</small></span></a>
     <nav class="nav-links" aria-label="Primary"><a href="#openings">Openings</a><a href="#companies">Companies</a><a href="#tracker">Tracker</a><a href="#updates">Updates</a></nav>
+    <div class="auth-area">
+      <button class="auth-button" id="signInBtn" type="button"><span class="google-dot">G</span><span class="auth-label">Sign in with Google</span></button>
+      <div class="user-chip hidden" id="userChip"><img class="user-avatar" id="userAvatar" alt="" /><span class="user-name" id="userName"></span><button class="signout-button" id="signOutBtn" type="button">Sign out</button></div>
+    </div>
   </div>
 </header>
 <main id="top">
@@ -78,8 +86,8 @@ footer{background:#0c2233;color:#aebfcb;border-top:1px solid rgba(255,255,255,.0
   </div></section>
 
   <section id="tracker" class="section"><div class="shell">
-    <div class="section-heading"><div><p class="eyebrow">Application tracker</p><h2>Know exactly where you stand.</h2><p class="section-copy">Statuses save automatically on this device. Your tracker stays private in your browser.</p></div></div>
-    <div class="tracker-wrap"><div class="tracker-summary" id="trackerGrid"></div><div class="tracker-help"><h3>Keep a simple routine.</h3><p>Save interesting roles, apply within a few days, then change the status to Applied. When a recruiter responds, move it to Interview. This keeps the entire search visible without a separate spreadsheet.</p><button class="button" id="exportBtn">Export my tracker</button></div></div>
+    <div class="section-heading"><div><p class="eyebrow">Application tracker</p><h2>Know exactly where you stand.</h2><p class="section-copy">Sign in with Google to sync your tracker privately across devices. If you stay signed out, your progress still saves on this browser.</p></div></div>
+    <div class="tracker-wrap"><div class="tracker-summary" id="trackerGrid"></div><div class="tracker-help"><h3>Keep a simple routine.</h3><p>Save interesting roles, apply within a few days, then change the status to Applied. When a recruiter responds, move it to Interview. This keeps the entire search visible without a separate spreadsheet.</p><button class="button" id="exportBtn">Export my tracker</button><div class="sync-note" id="syncNote">Not signed in — progress is saved on this browser only.</div></div></div>
   </div></section>
 
   <section id="updates" class="section about-section"><div class="shell about-grid">
@@ -89,16 +97,96 @@ footer{background:#0c2233;color:#aebfcb;border-top:1px solid rgba(255,255,255,.0
 </main>
 <footer><div class="shell footer-wrap"><span>Upstate ME Internships</span><span>Greenville · Spartanburg · Anderson, South Carolina</span></div></footer>
 <div id="toast" class="toast">Saved</div>
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { getFirestore, collection, doc, getDocs, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCgS7k0_jM5vY6A0DGxAgQozQhzFfner6s",
+  authDomain: "upstate-me-internships.firebaseapp.com",
+  projectId: "upstate-me-internships",
+  storageBucket: "upstate-me-internships.firebasestorage.app",
+  messagingSenderId: "21536689003",
+  appId: "1:21536689003:web:7f0cb6b413760f9dd49a2e"
+};
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+const googleProvider = new GoogleAuthProvider();
+
 const EMBEDDED_JOBS={"updated_at":"2026-09-24T11:33:00-04:00","source_note":"Seed snapshot. The scheduled updater can replace this file daily after deployment.","jobs":[{"id":"acs-me-mfg-current","company":"Air Compressor Services (ACS)","title":"Mechanical & Manufacturing Engineering Intern","location":"Greenville, SC","type":"Manufacturing","company_size":"small","term":"Current","salary":"","summary":"Hands-on CAD, prototyping, reverse engineering, manufacturing and process-improvement work with industrial equipment.","apply_url":"https://aircompressorservices.com/pages/engineering-intern","is_new":false},{"id":"ge-wind-2027","company":"GE Vernova","title":"Wind Engineering Internship - Summer 2027","location":"Greenville, SC","type":"Mechanical","company_size":"large","term":"Summer 2027","salary":"$1,000\u2013$2,000/week","summary":"Engineering internship supporting wind technology and renewable-energy engineering work.","apply_url":"https://click.appcast.io/t/cblx5bJWkUQK9Gx3htvVCvxgkSe4UTH1E7IcYw6mgqNLzer0iiKI6mPg0RxOhyw9lWioOvxanwya5GV7LsPaIw==?sar_id=2abxfob5&jpos=0","is_new":false},{"id":"ge-gaspower-2027","company":"GE Vernova","title":"Gas Power Engineering Internship - Summer 2027","location":"Greenville, SC","type":"Mechanical","company_size":"large","term":"Summer 2027","salary":"$1,000\u2013$2,000/week","summary":"Broad Gas Power engineering internship with exposure to turbine and power-generation engineering.","apply_url":"https://click.appcast.io/t/1-Fn5MVUuvIGc-avHD5oplmTBLN9s3fsZ4Axt5GmK_pMiv3XW8p02xVG6jF_RhN0Kfis4GXDExy7DuimYdZXbA==?sar_id=2abxfob5&jpos=3","is_new":false},{"id":"michelin-gvl-eng-2027","company":"Michelin","title":"Summer 2027 Internship: Engineering","location":"Greenville, SC","type":"Project","company_size":"large","term":"Summer 2027","salary":"","summary":"General engineering internship with opportunities across Michelin's Greenville-area engineering organization.","apply_url":"https://to.indeed.com/aahbnphpx6qw","is_new":false},{"id":"michelin-fi-process-2027","company":"Michelin","title":"Process Engineering Intern","location":"Fountain Inn, SC","type":"Process","company_size":"large","term":"Summer 2027","salary":"","summary":"Process-engineering internship focused on production processes and continuous improvement.","apply_url":"https://to.indeed.com/aanvj2svdynb","is_new":false},{"id":"michelin-anderson-2027","company":"Michelin","title":"Engineering and/or Sciences Internship","location":"Anderson, SC","type":"Project","company_size":"large","term":"Summer 2027","salary":"","summary":"Engineering internship at Michelin's Anderson operation.","apply_url":"https://to.indeed.com/aa2dj74ml9vy","is_new":false},{"id":"michelin-anderson-quality-2027","company":"Michelin","title":"Quality Internship","location":"Anderson, SC","type":"Quality","company_size":"large","term":"Summer 2027","salary":"","summary":"Quality-focused internship supporting manufacturing and engineering quality work.","apply_url":"https://to.indeed.com/aahs9fkz44gt","is_new":true},{"id":"bmw-product-spring27","company":"BMW Group","title":"Product Engineering Intern","location":"Spartanburg, SC","type":"Design","company_size":"large","term":"Spring 2027","salary":"","summary":"Product-engineering internship in BMW's Spartanburg manufacturing operation.","apply_url":"https://to.indeed.com/aaqybnbbb94r","is_new":false},{"id":"bmw-manufacturing-body-spring27","company":"BMW Group","title":"Manufacturing Engineering Body Shop Planning Intern","location":"Spartanburg, SC","type":"Manufacturing","company_size":"large","term":"Spring 2027","salary":"","summary":"Manufacturing engineering and planning work inside BMW's body-shop operation.","apply_url":"https://to.indeed.com/aalk774bflw2","is_new":false},{"id":"bmw-techplanning-spring27","company":"BMW Group","title":"Manufacturing Engineering / Technical Planning Intern","location":"Spartanburg, SC","type":"Manufacturing","company_size":"large","term":"Spring 2027","salary":"","summary":"Manufacturing engineering and technical planning for assembly, chassis and powertrain.","apply_url":"https://to.indeed.com/aafntkrf8zry","is_new":false},{"id":"jacobs-mech-2027","company":"Jacobs","title":"Building Mechanical Engineering Intern","location":"Greenville, SC","type":"Mechanical","company_size":"large","term":"Summer 2027","salary":"$48,000\u2013$60,000/year equivalent","summary":"Mechanical building-systems internship with HVAC and facilities design exposure.","apply_url":"https://to.indeed.com/aadgl9yp2cky","is_new":false},{"id":"garver-mech-2027","company":"Garver","title":"Mechanical Engineering Intern","location":"Greenville, SC","type":"Mechanical","company_size":"other","term":"2027","salary":"","summary":"Mechanical systems internship within Garver's Greenville Water Design Center.","apply_url":"https://to.indeed.com/aavlxt4z6929","is_new":false},{"id":"itw-mfg-2027","company":"Illinois Tool Works / Hartness","title":"Manufacturing Engineer Intern","location":"Greenville, SC","type":"Manufacturing","company_size":"large","term":"Current","salary":"","summary":"Manufacturing internship focused on equipment effectiveness, efficiency and process improvement.","apply_url":"https://click.appcast.io/t/8ZpsuoPF_-brRPLrhof3EY2qw8Caj4KWB0OSluIctfSfR-ZPxU6o5tFci2k4kQSoqb1YnbIfkyZBVuj9kDakGg==?sar_id=2abxfob5&jpos=6","is_new":false},{"id":"milliken-me-ee-2027","company":"Milliken & Company","title":"Mechanical/Electrical Engineering Intern","location":"Inman, SC","type":"Mechanical","company_size":"large","term":"Current","salary":"","summary":"Plant engineering internship with mechanical/electrical exposure in manufacturing.","apply_url":"https://to.indeed.com/aarmjw8fftzv","is_new":false},{"id":"opmobility-mfg","company":"OPmobility","title":"Site Manufacturing Engineering Intern","location":"Greer, SC","type":"Manufacturing","company_size":"large","term":"Current","salary":"$16\u2013$21/hour","summary":"Automotive manufacturing engineering internship supporting site operations and process improvement.","apply_url":"https://www.ziprecruiter.com/job-redirect?match_token=Cp4BChY1MGNNT3lTUjVybC1lUTlrbTUzTllREiQwMWEwZDQxMy05YzQ3LTdiOWEtOWQwYS1lZGY1OTFiNzU0ZmUaWkFBSGxVYlc5eGRRSUVNVk1Bc2tLYzJsTnEwNVNoMEpJemRJVUpHN2ZXMGRJWU94bHpEQ2trT1Nqc056MFI0YWVyOUFnbFRPQWNWdmNxRE9IYmVUdHh5Zms1QSDarQUQARjarQU%3D&server_redirect=true&tsid=100000600","is_new":false},{"id":"vertiv-mech-2027","company":"Vertiv","title":"Mechanical Engineering Intern","location":"Anderson, SC","type":"Mechanical","company_size":"large","term":"Summer 2027","salary":"","summary":"Design, documentation and continuous-improvement work on electromechanical products and busbar systems.","apply_url":"https://to.indeed.com/aa6mv8b4mg2m","is_new":true},{"id":"vertiv-thermal-2027","company":"Vertiv","title":"Mechanical/Thermal Engineering Intern","location":"Pelzer, SC","type":"Mechanical","company_size":"large","term":"Summer 2027","salary":"","summary":"Mechanical and thermal engineering internship for critical-infrastructure products.","apply_url":"https://to.indeed.com/aa9tslq7hzst","is_new":true},{"id":"vertiv-sustain-2027","company":"Vertiv","title":"Sustaining Engineering Intern","location":"Anderson, SC","type":"Reliability","company_size":"large","term":"Summer 2027","salary":"","summary":"Improve and maintain released electromechanical products through their lifecycle.","apply_url":"https://to.indeed.com/aasrgv2ktwmx","is_new":true},{"id":"hubbell-packaging-2027","company":"Hubbell","title":"Engineering - Packaging Intern","location":"Greenville, SC","type":"Project","company_size":"large","term":"Summer 2027","salary":"$22.50\u2013$29/hour","summary":"Engineering internship centered on packaging and product/manufacturing support.","apply_url":"https://to.indeed.com/aa68mhfkhn4f","is_new":true},{"id":"gmc-clemson-intern","company":"Goodwyn Mills Cawood","title":"Engineering Intern (Clemson University Students)","location":"Greenville, SC","type":"Project","company_size":"other","term":"Current","salary":"","summary":"Greenville engineering internship specifically recruiting Clemson University students.","apply_url":"https://to.indeed.com/aavpg76khtyq","is_new":true},{"id":"syensqo-quality","company":"Syensqo","title":"Quality Intern","location":"Piedmont, SC","type":"Quality","company_size":"large","term":"Current","salary":"","summary":"Quality internship in an advanced materials/manufacturing environment.","apply_url":"https://to.indeed.com/aazl9df6lzf8","is_new":true},{"id":"syensqo-hse","company":"Syensqo","title":"Health, Safety & Environmental Engineer Internship","location":"Piedmont, SC","type":"Project","company_size":"large","term":"Current","salary":"$22\u2013$24/hour","summary":"Engineering internship focused on plant health, safety and environmental systems.","apply_url":"https://to.indeed.com/aap78ssk9bll","is_new":true}]};
 const EMBEDDED_COMPANIES={"companies":[{"name":"Air Compressor Services (ACS)","size":"small","focus":"Mechanical design, CAD, manufacturing, prototyping and industrial equipment.","url":"https://aircompressorservices.com/pages/engineering-intern","action":"apply"},{"name":"KTM Solutions","size":"small","focus":"Custom machines, fixtures, structures, mechanical design and analysis.","url":"https://www.ktmsolutions.com/careers","action":"outreach"},{"name":"Schot Engineers","size":"small","focus":"Mechanical/process engineering, equipment design, piping and manufacturing systems.","url":"https://www.schoteng.com/","action":"outreach"},{"name":"H2L Consulting Engineers","size":"small","focus":"Mechanical building systems, HVAC and facility engineering.","url":"https://www.h2l.com/","action":"outreach"},{"name":"TFS Engineers","size":"small","focus":"HVAC, piping, plumbing and mechanical consulting.","url":"https://www.tfsengineers.com/","action":"outreach"},{"name":"Peritus Engineers","size":"small","focus":"Mechanical systems, HVAC, piping and building engineering.","url":"https://www.peritusengineers.com/","action":"outreach"},{"name":"Engineering Design Services","size":"small","focus":"Machine design, SolidWorks, process equipment, piping and production systems.","url":"https://www.edsi-edcs.com/","action":"outreach"},{"name":"DWG Consulting Engineers","size":"small","focus":"HVAC, plumbing, fire protection and building mechanical design.","url":"https://dwginc.com/careers/","action":"outreach"},{"name":"Eliant Engineering","size":"small","focus":"Product development, SolidWorks, FEA, mechanisms, prototyping and testing.","url":"https://eliantengineering.com/","action":"outreach"},{"name":"DEVITA","size":"small","focus":"Local engineering/design firm with mechanical and building-system work.","url":"https://devitainc.com/","action":"outreach"},{"name":"GE Vernova","size":"large","focus":"Gas turbines, wind, thermal, manufacturing, design and test engineering.","url":"https://careers.gevernova.com/","action":"apply"},{"name":"Michelin","size":"large","focus":"Manufacturing, process, quality, R&D and product engineering.","url":"https://jobs.michelinman.com/","action":"apply"},{"name":"BMW Group","size":"large","focus":"Automotive manufacturing, product, quality, tooling and automation engineering.","url":"https://www.bmwgroup.jobs/us/en.html","action":"apply"},{"name":"Jacobs","size":"large","focus":"Mechanical building systems, industrial/process design and facilities engineering.","url":"https://careers.jacobs.com/","action":"apply"},{"name":"Vertiv","size":"large","focus":"Mechanical/thermal design, electromechanical products and manufacturing.","url":"https://www.vertiv.com/en-us/about/careers/","action":"apply"},{"name":"Milliken & Company","size":"large","focus":"Mechanical, manufacturing, process and materials engineering.","url":"https://careers.milliken.com/","action":"apply"},{"name":"ZF","size":"large","focus":"Automotive manufacturing, process and product engineering.","url":"https://jobs.zf.com/","action":"apply"},{"name":"OPmobility","size":"large","focus":"Automotive manufacturing, injection molding, quality and process engineering.","url":"https://careers.opmobility.com/","action":"apply"},{"name":"ITW / Hartness","size":"large","focus":"Automation, packaging equipment and manufacturing engineering.","url":"https://careers.itw.com/","action":"apply"},{"name":"Hubbell","size":"large","focus":"Product, manufacturing and packaging engineering.","url":"https://careers.hubbell.com/","action":"apply"},{"name":"Optima Engineering","size":"small","focus":"MEP consulting with mechanical/HVAC building-system design in Greenville.","url":"https://optimaengineering.com/careers/","action":"outreach"},{"name":"aeSolutions","size":"small","focus":"Industrial automation, controls, process safety, fabrication and systems integration.","url":"https://www.aesolutions.com/careers/","action":"outreach"},{"name":"ITAC","size":"small","focus":"Industrial engineering, design-build, process equipment and automation projects.","url":"https://itac.us.com/careers/","action":"outreach"},{"name":"Jedson Engineering","size":"small","focus":"Industrial EPC, process equipment, piping, facility design and commissioning.","url":"https://www.jedson.com/careers/","action":"outreach"},{"name":"Goodwyn Mills Cawood","size":"large","focus":"Architecture and engineering consulting with current Greenville student recruiting.","url":"https://www.gmcnetwork.com/careers/","action":"apply"},{"name":"Syensqo","size":"large","focus":"Advanced materials manufacturing with quality and engineering internships in Piedmont.","url":"https://www.syensqo.com/en/career","action":"apply"}]};
-const state={jobs:[],companies:[],activeType:'all',companyTab:'small',tracking:JSON.parse(localStorage.getItem('upstate-me-tracking')||'{}')};
+const state={jobs:[],companies:[],activeType:'all',companyTab:'small',tracking:JSON.parse(localStorage.getItem('upstate-me-tracking')||'{}'),user:null,cloudReady:false};
 const $=id=>document.getElementById(id); const statuses=['New','Saved','Applied','Interview','Closed']; const types=['Mechanical','Manufacturing','Process','Quality','Design','Test','Reliability','R&D','Automation','Project'];
 const safe=(t='')=>String(t).replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 const initials=n=>n.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase();
 const trackedStatus=j=>state.tracking[j.id]?.status||'New';
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>t.classList.remove('show'),1500)}
-function saveStatus(id,status){state.tracking[id]={...(state.tracking[id]||{}),status,updatedAt:new Date().toISOString()};localStorage.setItem('upstate-me-tracking',JSON.stringify(state.tracking));renderJobs();renderTracker();toast(`Marked ${status}`)}
+const cloudDocId=id=>encodeURIComponent(String(id));
+function setSyncNote(html){const el=$('syncNote');if(el)el.innerHTML=html}
+async function writeCloudStatus(id,entry){
+  if(!state.user)return;
+  const job=state.jobs.find(j=>String(j.id)===String(id));
+  await setDoc(doc(db,'users',state.user.uid,'applications',cloudDocId(id)),{
+    jobId:String(id),status:entry.status,updatedAt:serverTimestamp(),
+    company:job?.company||'',title:job?.title||'',location:job?.location||''
+  },{merge:true});
+}
+async function saveStatus(id,status){
+  const entry={...(state.tracking[id]||{}),status,updatedAt:new Date().toISOString()};
+  state.tracking[id]=entry;
+  localStorage.setItem('upstate-me-tracking',JSON.stringify(state.tracking));
+  renderJobs();renderTracker();
+  if(state.user){
+    try{await writeCloudStatus(id,entry);setSyncNote('<span class="sync-badge"><span class="sync-dot"></span> Synced to your Google account</span>')}
+    catch(err){console.error(err);setSyncNote('Signed in, but cloud sync needs Firestore setup. Your change is still saved on this browser.')}
+  }
+  toast(`Marked ${status}`);
+}
+async function loadCloudTracking(user){
+  setSyncNote('Signing in and syncing your tracker…');
+  const local={...state.tracking};
+  try{
+    const snap=await getDocs(collection(db,'users',user.uid,'applications'));
+    const cloud={};
+    snap.forEach(d=>{
+      const v=d.data()||{};
+      if(v.jobId&&v.status)cloud[v.jobId]={status:v.status,updatedAt:v.updatedAt?.toDate?.()?.toISOString?.()||''};
+    });
+    state.tracking={...local,...cloud};
+    localStorage.setItem('upstate-me-tracking',JSON.stringify(state.tracking));
+    const missing=Object.entries(local).filter(([id])=>!cloud[id]);
+    if(missing.length)await Promise.all(missing.map(([id,entry])=>writeCloudStatus(id,entry)));
+    state.cloudReady=true;
+    renderJobs();renderTracker();
+    setSyncNote('<span class="sync-badge"><span class="sync-dot"></span> Synced privately to your Google account</span>');
+  }catch(err){
+    console.error(err);
+    state.cloudReady=false;
+    setSyncNote('Signed in, but cloud sync needs Firestore setup. Your progress is still safe on this browser.');
+  }
+}
+function renderAuthUser(user){
+  const signedIn=!!user;
+  $('signInBtn').classList.toggle('hidden',signedIn);
+  $('userChip').classList.toggle('hidden',!signedIn);
+  if(user){
+    $('userName').textContent=user.displayName||user.email||'Signed in';
+    $('userAvatar').src=user.photoURL||'';
+    $('userAvatar').alt=user.displayName?user.displayName+' profile photo':'Profile photo';
+  }
+}
+$('signInBtn').onclick=async()=>{
+  try{await signInWithPopup(auth,googleProvider)}
+  catch(err){console.error(err);toast(err.code==='auth/unauthorized-domain'?'Add this GitHub domain in Firebase first':'Google sign-in could not start')}
+};
+$('signOutBtn').onclick=async()=>{await signOut(auth);toast('Signed out')};
+onAuthStateChanged(auth,async user=>{
+  state.user=user||null;state.cloudReady=false;renderAuthUser(user);
+  if(user){await loadCloudTracking(user)}
+  else{setSyncNote('Not signed in — progress is saved on this browser only.');renderJobs();renderTracker()}
+});
 function normalizedCity(location=''){const l=location.toLowerCase();const g=['greenville','greer','simpsonville','fountain inn','mauldin','easley','piedmont','pelzer','duncan'];const s=['spartanburg','inman','woodruff','roebuck','boiling springs','gaffney'];const a=['anderson','pendleton','clemson','seneca','belton','liberty','westminster'];if(g.some(x=>l.includes(x)))return'Greenville';if(s.some(x=>l.includes(x)))return'Spartanburg';if(a.some(x=>l.includes(x)))return'Anderson';return'Other'}
 function jobMatches(job){const q=$('searchInput').value.trim().toLowerCase(),city=$('cityFilter').value,type=$('typeFilter').value,size=$('sizeFilter').value,status=$('statusFilter').value,effective=state.activeType!=='all'?state.activeType:type,hay=`${job.title} ${job.company} ${job.location}`.toLowerCase();if(q&&!hay.includes(q))return false;if(city!=='all'&&normalizedCity(job.location)!==city)return false;if(effective!=='all'&&job.type!==effective)return false;if(size!=='all'&&job.company_size!==size)return false;if(status!=='all'&&trackedStatus(job)!==status)return false;return true}
 function renderPills(){$('typePills').innerHTML=['all',...types].map(type=>`<button class="pill ${state.activeType===type?'active':''}" data-type="${safe(type)}">${type==='all'?'All types':safe(type)}</button>`).join('');$('typePills').querySelectorAll('button').forEach(btn=>btn.onclick=()=>{state.activeType=btn.dataset.type;$('typeFilter').value='all';renderPills();renderJobs()})}
